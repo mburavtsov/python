@@ -1,0 +1,60 @@
+from simple_salesforce import Salesforce
+from datetime import datetime, timedelta
+
+#accepts Salesforce connection object and user's case number (case should be owned by user). returns user's ownerID
+def get_case_ownerid(Salesforce, case_number):
+    sf = Salesforce
+    sf_case = sf.query("SELECT Id, OwnerID, Status FROM Case WHERE CaseNumber='" + case_number + "'")
+    OwnerID = sf_case['records'][0]['OwnerId']
+
+    return OwnerID
+
+#accepts Salesforce connection object & OwnerID of SF user. returns dict where case nubmer is key, caseID is value
+def get_my_cases(Salesforce, OwnerID):
+    sf = Salesforce
+    my_cases_sf = sf.query(
+        "Select Id, CaseNumber FROM Case where OwnerID='" + OwnerID + "' AND Status NOT IN ('Junk','Closed No Response','Closed','Merged','Closed In KB','Closed by Customer','Reviewed')")
+    case_data = my_cases_sf['records']
+    my_cases = {}
+
+    for item in case_data:
+        my_cases[item['CaseNumber']] = item['Id']
+
+    return my_cases
+
+#get_last_comment_date() takes case_id, returns date_time of last comment as datetime object in "%Y-%m-%dT%H:%M:%S" format
+def get_last_comment_date(case_id):
+    time_format = "%Y-%m-%dT%H:%M:%S"
+    comments = sf.query("SELECT ID, CommentBody, CreatedDate FROM CaseComment WHERE ParentID = '" + case_id +"'")
+    records = comments['records']
+    last_comment = records[-1]
+    date_last_comment = last_comment['CreatedDate']
+    date_last_comment = datetime.strptime(date_last_comment[0:19], time_format)
+
+    return date_last_comment
+
+#gets last comment date for case from get_last_comment_date() method, returns True if case is not commented for last X days
+def requires_new_comment(date_last_comment):
+    current_date = datetime.now()
+    if (current_date - date_last_comment) > timedelta(days=6):
+        return True
+
+case_number = "03319934"
+sf = Salesforce(username='', password='', security_token='aENSwe5MZlrTrQR8A5iiPcU5d')
+
+ownerID = get_case_ownerid(sf, case_number)
+
+my_cases_dict = get_my_cases(sf, ownerID)
+
+for k,v in my_cases_dict.items():
+    last_comment_date = get_last_comment_date(my_cases_dict[k])
+    case_requires_comment = list()
+    if requires_new_comment(last_comment_date):
+        case_requires_comment.append(k)
+        #print("Requires new comment", k)
+
+if len(case_requires_comment)== 0:
+    print("no cases require comments")
+else:
+    print("Case needs comment", case_requires_comment, sep='\n')
+
